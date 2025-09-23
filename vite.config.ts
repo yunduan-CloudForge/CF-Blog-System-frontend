@@ -81,6 +81,10 @@ export default defineConfig({
   assetsInclude: ['**/*.svg', '**/*.png', '**/*.jpg', '**/*.jpeg', '**/*.gif', '**/*.webp'],
   // 开发服务器优化
   server: {
+    host: '0.0.0.0', // 允许外部访问
+    port: 5173,
+    strictPort: true,
+    allowedHosts: true, // 允许所有域名访问
     // 启用HTTP/2
     // https: false, // 注释掉，使用默认值
     // 预热常用文件

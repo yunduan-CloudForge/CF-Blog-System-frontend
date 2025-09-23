@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>管理员日志页面测试</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        .status {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+        }
+        .success { background-color: #d4edda; color: #155724; }
+        .error { background-color: #f8d7da; color: #721c24; }
+        .info { background-color: #d1ecf1; color: #0c5460; }
+        .warning { background-color: #fff3cd; color: #856404; }
+        button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        button.success {
+            background-color: #28a745;
+        }
+        button.success:hover {
+            background-color: #218838;
+        }
+        pre {
+            background-color: #f8f9fa;
+            padding: 10px;
+            border-radius: 4px;
+            overflow-x: auto;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        .iframe-container {
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        iframe {
+            width: 100%;
+            height: 600px;
+            border: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>管理员日志页面测试工具</h1>
+        
+        <div>
+            <button onclick="setupAuth()">1. 设置管理员认证</button>
+            <button onclick="testAPI()">2. 测试日志API</button>
+            <button onclick="loadAdminPage()">3. 加载管理员页面</button>
+            <button onclick="checkPageContent()">4. 检查页面内容</button>
+            <button onclick="clearAuth()">清除认证</button>
+        </div>
+        
+        <div id="results"></div>
+    </div>
+    
+    <div class="container">
+        <h2>管理员日志页面预览</h2>
+        <div class="iframe-container">
+            <iframe id="adminFrame" src="about:blank"></iframe>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:3001/api';
+        const FRONTEND_BASE = 'http://localhost:5173';
+        
+        function log(message, type = 'info') {
+            const results = document.getElementById('results');
+            const div = document.createElement('div');
+            div.className = `status ${type}`;
+            div.innerHTML = `<strong>${new Date().toLocaleTimeString()}</strong>: ${message}`;
+            results.appendChild(div);
+            results.scrollTop = results.scrollHeight;
+        }
+        
+        async function setupAuth() {
+            log('正在设置管理员认证...');
+            
+            try {
+                // 1. 登录获取token
+                const response = await fetch(`${API_BASE}/auth/login`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        email: 'admin@blog.com',
+                        password: 'admin123'
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    log('登录成功！', 'success');
+                    log(`用户: ${data.data.user.username} (${data.data.user.role})`);
+                    
+                    // 2. 保存认证信息到localStorage
+                    const authData = {
+                        state: {
+                            token: data.data.token,
+                            user: data.data.user,
+                            isAuthenticated: true
+                        },
+                        version: 0
+                    };
+                    
+                    localStorage.setItem('auth-storage', JSON.stringify(authData));
+                    log('认证信息已保存到本地存储', 'success');
+                    
+                    // 3. 设置iframe的localStorage（跨域限制可能导致失败）
+                    try {
+                        const iframe = document.getElementById('adminFrame');
+                        if (iframe.contentWindow && iframe.contentWindow.localStorage) {
+                            iframe.contentWindow.localStorage.setItem('auth-storage', JSON.stringify(authData));
+                            log('iframe认证信息已设置', 'success');
+                        }
+                    } catch (e) {
+                        log('无法设置iframe认证信息（跨域限制）', 'warning');
+                    }
+                    
+                } else {
+                    log(`登录失败: ${data.message}`, 'error');
+                }
+            } catch (e) {
+                log(`登录请求失败: ${e.message}`, 'error');
+            }
+        }
+        
+        async function testAPI() {
+            log('正在测试日志API...');
+            
+            const authStorage = localStorage.getItem('auth-storage');
+            if (!authStorage) {
+                log('请先设置认证信息', 'error');
+                return;
+            }
+            
+            try {
+                const authData = JSON.parse(authStorage);
+                const token = authData.state?.token;
+                
+                if (!token) {
+                    log('未找到token', 'error');
+                    return;
+                }
+                
+                const response = await fetch(`${API_BASE}/admin/logs`, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    log('日志API调用成功！', 'success');
+                    log(`总记录数: ${data.total}`);
+                    log(`当前页: ${data.page}`);
+                    log(`每页数量: ${data.limit}`);
+                    log(`日志记录: <pre>${JSON.stringify(data.logs, null, 2)}</pre>`);
+                } else {
+                    log(`日志API调用失败: ${JSON.stringify(data)}`, 'error');
+                }
+            } catch (e) {
+                log(`日志API请求失败: ${e.message}`, 'error');
+            }
+        }
+        
+        function loadAdminPage() {
+            log('正在加载管理员日志页面...');
+            const iframe = document.getElementById('adminFrame');
+            iframe.src = `${FRONTEND_BASE}/admin/logs`;
+            
+            iframe.onload = function() {
+                log('管理员页面加载完成', 'success');
+                setTimeout(() => {
+                    checkPageContent();
+                }, 2000);
+            };
+            
+            iframe.onerror = function() {
+                log('管理员页面加载失败', 'error');
+            };
+        }
+        
+        function checkPageContent() {
+            log('正在检查页面内容...');
+            
+            const iframe = document.getElementById('adminFrame');
+            try {
+                const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
+                const pageTitle = iframeDoc.title;
+                const bodyText = iframeDoc.body.innerText;
+                
+                log(`页面标题: ${pageTitle}`);
+                
+                if (bodyText.includes('操作日志')) {
+                    log('页面包含"操作日志"文本', 'success');
+                } else {
+                    log('页面不包含"操作日志"文本', 'warning');
+                }
+                
+                if (bodyText.includes('访问被拒绝')) {
+                    log('页面显示"访问被拒绝"，可能是权限问题', 'error');
+                }
+                
+                if (bodyText.includes('登录')) {
+                    log('页面显示登录相关内容，可能未正确认证', 'warning');
+                }
+                
+                // 检查是否有数据表格
+                const tables = iframeDoc.querySelectorAll('table');
+                if (tables.length > 0) {
+                    log(`找到 ${tables.length} 个表格`, 'success');
+                } else {
+                    log('未找到数据表格', 'warning');
+                }
+                
+                // 检查是否有加载状态
+                if (bodyText.includes('加载中') || bodyText.includes('Loading')) {
+                    log('页面显示加载状态', 'info');
+                }
+                
+                // 检查是否有错误信息
+                if (bodyText.includes('错误') || bodyText.includes('Error')) {
+                    log('页面包含错误信息', 'error');
+                }
+                
+                log(`页面内容预览: <pre>${bodyText.substring(0, 500)}...</pre>`);
+                
+            } catch (e) {
+                log(`无法访问iframe内容（跨域限制）: ${e.message}`, 'warning');
+                log('请手动检查iframe中的页面内容');
+            }
+        }
+        
+        function clearAuth() {
+            localStorage.removeItem('auth-storage');
+            log('认证信息已清除', 'info');
+        }
+        
+        // 页面加载时的初始化
+        window.onload = function() {
+            log('测试工具已加载');
+            log('请按顺序点击按钮进行测试：');
+            log('1. 设置管理员认证 → 2. 测试日志API → 3. 加载管理员页面 → 4. 检查页面内容');
+        };
+    </script>
+</body>
+</html>

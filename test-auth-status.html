@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>认证状态测试</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .status {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+        }
+        .success { background-color: #d4edda; color: #155724; }
+        .error { background-color: #f8d7da; color: #721c24; }
+        .info { background-color: #d1ecf1; color: #0c5460; }
+        button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        pre {
+            background-color: #f8f9fa;
+            padding: 10px;
+            border-radius: 4px;
+            overflow-x: auto;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>博客系统认证状态测试</h1>
+        
+        <div id="status"></div>
+        
+        <div>
+            <button onclick="checkAuthStatus()">检查认证状态</button>
+            <button onclick="testLogin()">测试管理员登录</button>
+            <button onclick="testLogsAPI()">测试日志API</button>
+            <button onclick="openAdminLogs()">打开管理员日志页面</button>
+        </div>
+        
+        <div id="results"></div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:3001/api';
+        const FRONTEND_BASE = 'http://localhost:5173';
+        
+        function log(message, type = 'info') {
+            const results = document.getElementById('results');
+            const div = document.createElement('div');
+            div.className = `status ${type}`;
+            div.innerHTML = `<strong>${new Date().toLocaleTimeString()}</strong>: ${message}`;
+            results.appendChild(div);
+            results.scrollTop = results.scrollHeight;
+        }
+        
+        function checkAuthStatus() {
+            log('正在检查本地存储的认证状态...');
+            
+            // 检查localStorage中的认证信息
+            const authStorage = localStorage.getItem('auth-storage');
+            if (authStorage) {
+                try {
+                    const authData = JSON.parse(authStorage);
+                    log(`本地存储数据: <pre>${JSON.stringify(authData, null, 2)}</pre>`);
+                    
+                    if (authData.state && authData.state.token) {
+                        log('发现token，检查用户信息...', 'success');
+                        log(`用户: ${authData.state.user?.username} (${authData.state.user?.email})`);
+                        log(`角色: ${authData.state.user?.role}`);
+                        log(`认证状态: ${authData.state.isAuthenticated}`);
+                    } else {
+                        log('未找到有效的token', 'error');
+                    }
+                } catch (e) {
+                    log(`解析认证数据失败: ${e.message}`, 'error');
+                }
+            } else {
+                log('本地存储中没有认证数据', 'error');
+            }
+        }
+        
+        async function testLogin() {
+            log('正在测试管理员登录...');
+            
+            try {
+                const response = await fetch(`${API_BASE}/auth/login`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        email: 'admin@blog.com',
+                        password: 'admin123'
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    log('登录成功！', 'success');
+                    log(`Token: ${data.data.token.substring(0, 20)}...`);
+                    log(`用户: ${data.data.user.username} (${data.data.user.role})`);
+                    
+                    // 保存到localStorage（模拟前端行为）
+                    const authData = {
+                        state: {
+                            token: data.data.token,
+                            user: data.data.user,
+                            isAuthenticated: true
+                        },
+                        version: 0
+                    };
+                    localStorage.setItem('auth-storage', JSON.stringify(authData));
+                    log('认证信息已保存到本地存储', 'success');
+                } else {
+                    log(`登录失败: ${data.message}`, 'error');
+                }
+            } catch (e) {
+                log(`登录请求失败: ${e.message}`, 'error');
+            }
+        }
+        
+        async function testLogsAPI() {
+            log('正在测试日志API...');
+            
+            const authStorage = localStorage.getItem('auth-storage');
+            if (!authStorage) {
+                log('请先登录', 'error');
+                return;
+            }
+            
+            try {
+                const authData = JSON.parse(authStorage);
+                const token = authData.state?.token;
+                
+                if (!token) {
+                    log('未找到token', 'error');
+                    return;
+                }
+                
+                const response = await fetch(`${API_BASE}/admin/logs`, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    log('日志API调用成功！', 'success');
+                    log(`总记录数: ${data.total}`);
+                    log(`当前页: ${data.page}`);
+                    log(`每页数量: ${data.limit}`);
+                    log(`日志数据: <pre>${JSON.stringify(data.logs, null, 2)}</pre>`);
+                } else {
+                    log(`日志API调用失败: ${JSON.stringify(data)}`, 'error');
+                }
+            } catch (e) {
+                log(`日志API请求失败: ${e.message}`, 'error');
+            }
+        }
+        
+        function openAdminLogs() {
+            log('正在打开管理员日志页面...');
+            window.open(`${FRONTEND_BASE}/admin/logs`, '_blank');
+        }
+        
+        // 页面加载时自动检查状态
+        window.onload = function() {
+            log('页面加载完成，开始检查系统状态...');
+            checkAuthStatus();
+        };
+    </script>
+</body>
+</html>
